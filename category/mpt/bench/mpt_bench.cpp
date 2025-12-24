@@ -242,7 +242,7 @@ int main(int argc, char** argv) {
                 totalSlotsModified++;
             }
 
-            accountUpdates.push_back(monad::mpt::make_update(addrHash, monad::mpt::UpdateList{}));
+            accountUpdates.push_back(monad::mpt::make_update(addrHash, std::nullopt));
             accountUpdates.back().next = std::move(currentSlotUpdateList);
             batchUpdateList.push_front(accountUpdates.back());
         }
