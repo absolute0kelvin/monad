@@ -60,6 +60,7 @@ int main(int argc, char** argv) {
     int nSlots = 1000;
     int mModify = 10;
     int kCommit = 50;
+    int fileSizeGB = 2;
     std::vector<std::filesystem::path> dbPathList;
     bool clearDB = true;
 
@@ -68,7 +69,8 @@ int main(int argc, char** argv) {
     app.add_option("--slots", nSlots, "Number of slots per account (avg)")->default_val(1000);
     app.add_option("-m", mModify, "Number of accounts to modify")->default_val(10);
     app.add_option("-k", kCommit, "Number of accounts per commit")->default_val(50);
-    app.add_option("--db", dbPathList, "Path to database")->required();
+    app.add_option("--size", fileSizeGB, "File size in GB")->default_val(2);
+    app.add_option("--db", dbPathList, "Path to database file")->required();
     app.add_flag("--clear", clearDB, "Clear database before starting")->default_val(true);
 
     try {
@@ -88,7 +90,9 @@ int main(int argc, char** argv) {
         std::filesystem::remove_all(dbPath);
     }
 
-    std::filesystem::create_directories(dbPath);
+    if (dbPath.has_parent_path()) {
+        std::filesystem::create_directories(dbPath.parent_path());
+    }
 
     std::cout << "Initializing MonadDB at " << dbPath << "..." << std::endl;
     
@@ -97,7 +101,8 @@ int main(int argc, char** argv) {
     auto const config = monad::mpt::OnDiskDbConfig{
         .append = true, 
         .compaction = true, 
-        .dbname_paths = dbPathList
+        .dbname_paths = dbPathList,
+        .file_size_db = fileSizeGB
     };
     monad::mpt::Db db{machine, config};
 
