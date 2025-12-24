@@ -129,6 +129,7 @@ int main(int argc, char** argv) {
     std::cout << "Phase 1: Creating " << nAccounts << " accounts with variable slots (avg " << nSlots << ")..." << std::endl;
     auto phase1Start = std::chrono::steady_clock::now();
     int64_t totalSlotsCreated = 0;
+    uint64_t currentVersion = 0;
 
     for (int i = 0; i < nAccounts; i += kCommit) {
         int batchEnd = std::min(i + kCommit, nAccounts);
@@ -187,10 +188,10 @@ int main(int argc, char** argv) {
             batchUpdateList.push_front(accountUpdates.back());
         }
 
-        uint64_t version = (uint64_t)(i / kCommit) + 1;
-        root = db.upsert(std::move(root), std::move(batchUpdateList), version);
+        currentVersion++;
+        root = db.upsert(std::move(root), std::move(batchUpdateList), currentVersion);
         
-        std::cout << "[Batch " << version << "] Disk: " 
+        std::cout << "[Batch " << currentVersion << "] Disk: " 
                   << std::fixed << std::setprecision(2) << (double)get_dir_size(dbPath) / 1024 / 1024 << " MB" << std::endl;
     }
 
@@ -255,9 +256,9 @@ int main(int argc, char** argv) {
             batchUpdateList.push_front(accountUpdates.back());
         }
 
-        uint64_t version = 1000000 + (uint64_t)(i / kCommit) + 1;
-        root = db.upsert(std::move(root), std::move(batchUpdateList), version);
-        std::cout << "[Mod Batch] committed. Disk: " << (double)get_dir_size(dbPath) / 1024 / 1024 << " MB" << std::endl;
+        currentVersion++;
+        root = db.upsert(std::move(root), std::move(batchUpdateList), currentVersion);
+        std::cout << "[Mod Batch " << currentVersion << "] committed. Disk: " << (double)get_dir_size(dbPath) / 1024 / 1024 << " MB" << std::endl;
     }
 
     auto p2Elapsed = std::chrono::steady_clock::now() - phase2Start;
