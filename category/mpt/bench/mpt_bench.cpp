@@ -46,10 +46,14 @@ static monad::byte_string hash_string(std::string_view s) {
 static uint64_t get_dir_size(const std::filesystem::path& path) {
     uint64_t size = 0;
     if (std::filesystem::exists(path)) {
-        for (const auto& entry : std::filesystem::recursive_directory_iterator(path)) {
-            if (entry.is_regular_file()) {
-                size += entry.file_size();
+        if (std::filesystem::is_directory(path)) {
+            for (const auto& entry : std::filesystem::recursive_directory_iterator(path)) {
+                if (entry.is_regular_file()) {
+                    size += entry.file_size();
+                }
             }
+        } else if (std::filesystem::is_regular_file(path)) {
+            size = std::filesystem::file_size(path);
         }
     }
     return size;
