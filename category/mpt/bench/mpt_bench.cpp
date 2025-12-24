@@ -32,6 +32,7 @@
 #include <vector>
 #include <numeric>
 #include <list>
+#include <map>
 #include <iomanip>
 
 using namespace monad::mpt;
@@ -132,39 +133,25 @@ int main(int argc, char** argv) {
     for (int i = 0; i < nAccounts; i += kCommit) {
         int batchEnd = std::min(i + kCommit, nAccounts);
         
-        // Use std::list to ensure stable addresses for NibblesView/byte_string_view
-        std::list<monad::byte_string> accountDataKeys;
-        std::list<monad::byte_string> accountDataValues;
-        std::list<monad::byte_string> slotKeys;
-        std::list<monad::byte_string> slotValues;
-        
-        std::list<monad::mpt::Update> accountUpdates;
-        std::list<monad::mpt::UpdateList> slotUpdateLists;
-        std::list<std::list<monad::mpt::Update>> slotUpdatesPerAccount;
-
-        monad::mpt::UpdateList batchUpdateList;
+        // Use maps to deduplicate keys within a batch
+        struct AccountData {
+            monad::byte_string value;
+            std::map<monad::byte_string, monad::byte_string> slots;
+        };
+        std::map<monad::byte_string, AccountData> batchData;
 
         for (int j = i; j < batchEnd; ++j) {
             auto addrHash = hash_string("account-" + std::to_string(j));
             if (addrs.size() <= (size_t)j) addrs.push_back(addrHash);
 
-            accountDataKeys.push_back(addrHash);
-            monad::byte_string accVal(40, 0);
-            for(int b=0; b<40; ++b) accVal[b] = (uint8_t)(r() % 256);
-            accountDataValues.push_back(accVal);
+            auto& acc = batchData[addrHash];
+            // Simulate account data
+            acc.value = monad::byte_string(40, 0);
+            for(int b=0; b<40; ++b) acc.value[b] = (uint8_t)(r() % 256);
 
             int vSlots = r() % (nSlots * 2);
-            totalSlotsCreated += vSlots;
-
-            slotUpdateLists.emplace_back();
-            auto& currentSlotUpdateList = slotUpdateLists.back();
-            slotUpdatesPerAccount.emplace_back();
-            auto& currentAccountSlots = slotUpdatesPerAccount.back();
-
             for (int s = 0; s < vSlots; ++s) {
                 auto sKey = hash_string("acc-" + std::to_string(j) + "-slot-" + std::to_string(s));
-                slotKeys.push_back(sKey);
-
                 monad::byte_string sVal(32, 0);
                 uint32_t dice = r() % 100;
                 if (dice < 20) {
@@ -173,13 +160,29 @@ int main(int argc, char** argv) {
                 } else {
                     for(int b=0; b<32; ++b) sVal[b] = (uint8_t)(r() % 256);
                 }
-                slotValues.push_back(sVal);
+                acc.slots[sKey] = sVal;
+                totalSlotsCreated++;
+            }
+        }
 
-                currentAccountSlots.push_back(monad::mpt::make_update(slotKeys.back(), slotValues.back()));
+        // Now build the intrusive Update structures from the deduplicated data
+        std::list<monad::mpt::Update> accountUpdates;
+        std::list<monad::mpt::UpdateList> slotUpdateLists;
+        std::list<std::list<monad::mpt::Update>> slotUpdatesPerAccount;
+        monad::mpt::UpdateList batchUpdateList;
+
+        for (auto& [addr, acc] : batchData) {
+            slotUpdateLists.emplace_back();
+            auto& currentSlotUpdateList = slotUpdateLists.back();
+            slotUpdatesPerAccount.emplace_back();
+            auto& currentAccountSlots = slotUpdatesPerAccount.back();
+
+            for (auto const& [sKey, sVal] : acc.slots) {
+                currentAccountSlots.push_back(monad::mpt::make_update(sKey, sVal));
                 currentSlotUpdateList.push_front(currentAccountSlots.back());
             }
 
-            accountUpdates.push_back(monad::mpt::make_update(accountDataKeys.back(), accountDataValues.back()));
+            accountUpdates.push_back(monad::mpt::make_update(addr, acc.value));
             accountUpdates.back().next = std::move(currentSlotUpdateList);
             batchUpdateList.push_front(accountUpdates.back());
         }
@@ -212,37 +215,43 @@ int main(int argc, char** argv) {
     for (int i = 0; i < mModify; i += kCommit) {
         int batchEnd = std::min(i + kCommit, mModify);
 
-        std::list<monad::byte_string> slotKeys;
-        std::list<monad::byte_string> slotValues;
-        std::list<monad::mpt::Update> accountUpdates;
-        std::list<monad::mpt::UpdateList> slotUpdateLists;
-        std::list<std::list<monad::mpt::Update>> slotUpdatesPerAccount;
-        monad::mpt::UpdateList batchUpdateList;
+        // Deduplicate slots within a batch using a map
+        std::map<monad::byte_string, std::map<monad::byte_string, monad::byte_string>> batchModData;
 
         for (int j = i; j < batchEnd; ++j) {
             int accountIdx = indices[j];
             auto addrHash = addrs[accountIdx];
 
+            for (int s = 0; s < 100; ++s) {
+                int slotIdx = r() % nSlots;
+                auto sKey = hash_string("acc-" + std::to_string(accountIdx) + "-slot-" + std::to_string(slotIdx));
+                
+                monad::byte_string sVal(32, 0);
+                for(int b=0; b<32; ++b) sVal[b] = (uint8_t)(r() % 256);
+                
+                batchModData[addrHash][sKey] = sVal;
+                totalSlotsModified++;
+            }
+        }
+
+        // Now build the intrusive Update structures
+        std::list<monad::mpt::Update> accountUpdates;
+        std::list<monad::mpt::UpdateList> slotUpdateLists;
+        std::list<std::list<monad::mpt::Update>> slotUpdatesPerAccount;
+        monad::mpt::UpdateList batchUpdateList;
+
+        for (auto& [addr, slots] : batchModData) {
             slotUpdateLists.emplace_back();
             auto& currentSlotUpdateList = slotUpdateLists.back();
             slotUpdatesPerAccount.emplace_back();
             auto& currentAccountSlots = slotUpdatesPerAccount.back();
 
-            for (int s = 0; s < 100; ++s) {
-                int slotIdx = r() % nSlots;
-                auto sKey = hash_string("acc-" + std::to_string(accountIdx) + "-slot-" + std::to_string(slotIdx));
-                slotKeys.push_back(sKey);
-                
-                monad::byte_string sVal(32, 0);
-                for(int b=0; b<32; ++b) sVal[b] = (uint8_t)(r() % 256);
-                slotValues.push_back(sVal);
-
-                currentAccountSlots.push_back(monad::mpt::make_update(slotKeys.back(), slotValues.back()));
+            for (auto const& [sKey, sVal] : slots) {
+                currentAccountSlots.push_back(monad::mpt::make_update(sKey, sVal));
                 currentSlotUpdateList.push_front(currentAccountSlots.back());
-                totalSlotsModified++;
             }
 
-            accountUpdates.push_back(monad::mpt::make_update(addrHash, std::move(currentSlotUpdateList)));
+            accountUpdates.push_back(monad::mpt::make_update(addr, std::move(currentSlotUpdateList)));
             batchUpdateList.push_front(accountUpdates.back());
         }
 
