@@ -99,7 +99,7 @@ int main(int argc, char** argv) {
     // Setup Database
     monad::test::StateMachineAlwaysMerkle machine{};
     auto const config = monad::mpt::OnDiskDbConfig{
-        .append = true, 
+        .append = false, 
         .compaction = true, 
         .dbname_paths = dbPathList,
         .file_size_db = fileSizeGB
