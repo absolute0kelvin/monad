@@ -94,8 +94,10 @@ int main(int argc, char** argv) {
         std::filesystem::create_directories(dbPath.parent_path());
     }
 
+    std::cout << "Starting Quill..." << std::endl;
+    quill::start(true);
+
     std::cout << "Initializing MonadDB at " << dbPath << "..." << std::endl;
-    
     // Setup Database
     monad::test::StateMachineAlwaysMerkle machine{};
     auto const config = monad::mpt::OnDiskDbConfig{
@@ -104,10 +106,17 @@ int main(int argc, char** argv) {
         .dbname_paths = dbPathList,
         .file_size_db = fileSizeGB
     };
+    std::cout << "Creating Db object..." << std::endl;
     monad::mpt::Db db{machine, config};
+    std::cout << "Db object created." << std::endl;
 
     monad::small_prng r(42);
-    auto root = db.load_root_for_version(db.get_latest_version());
+    
+    uint64_t latest_version = db.get_latest_version();
+    Node::SharedPtr root;
+    if (latest_version != 0 && latest_version != (uint64_t)-1) {
+        root = db.load_root_for_version(latest_version);
+    }
 
     std::vector<monad::byte_string> addrs;
     addrs.reserve(nAccounts);
@@ -136,7 +145,6 @@ int main(int argc, char** argv) {
             if (addrs.size() <= (size_t)j) addrs.push_back(addrHash);
 
             accountDataKeys.push_back(addrHash);
-            // Simulate account data (balance + nonce)
             monad::byte_string accVal(40, 0);
             for(int b=0; b<40; ++b) accVal[b] = (uint8_t)(r() % 256);
             accountDataValues.push_back(accVal);
@@ -144,10 +152,10 @@ int main(int argc, char** argv) {
             int vSlots = r() % (nSlots * 2);
             totalSlotsCreated += vSlots;
 
-            slotUpdatesPerAccount.emplace_back();
-            auto& currentAccountSlots = slotUpdatesPerAccount.back();
             slotUpdateLists.emplace_back();
             auto& currentSlotUpdateList = slotUpdateLists.back();
+            slotUpdatesPerAccount.emplace_back();
+            auto& currentAccountSlots = slotUpdatesPerAccount.back();
 
             for (int s = 0; s < vSlots; ++s) {
                 auto sKey = hash_string("acc-" + std::to_string(j) + "-slot-" + std::to_string(s));
@@ -156,11 +164,9 @@ int main(int argc, char** argv) {
                 monad::byte_string sVal(32, 0);
                 uint32_t dice = r() % 100;
                 if (dice < 20) {
-                    // zero
                 } else if (dice < 30) {
                     sVal[31] = 1;
                 } else {
-                    // random
                     for(int b=0; b<32; ++b) sVal[b] = (uint8_t)(r() % 256);
                 }
                 slotValues.push_back(sVal);
@@ -169,7 +175,8 @@ int main(int argc, char** argv) {
                 currentSlotUpdateList.push_front(currentAccountSlots.back());
             }
 
-            accountUpdates.push_back(monad::mpt::make_update(accountDataKeys.back(), accountDataValues.back(), false, std::move(currentSlotUpdateList)));
+            accountUpdates.push_back(monad::mpt::make_update(accountDataKeys.back(), accountDataValues.back()));
+            accountUpdates.back().next = std::move(currentSlotUpdateList);
             batchUpdateList.push_front(accountUpdates.back());
         }
 
@@ -231,7 +238,8 @@ int main(int argc, char** argv) {
                 totalSlotsModified++;
             }
 
-            accountUpdates.push_back(monad::mpt::make_update(addrHash, std::move(currentSlotUpdateList)));
+            accountUpdates.push_back(monad::mpt::make_update(addrHash, monad::mpt::UpdateList{}));
+            accountUpdates.back().next = std::move(currentSlotUpdateList);
             batchUpdateList.push_front(accountUpdates.back());
         }
 
