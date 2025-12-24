@@ -19,3 +19,10 @@ monad_compile_options(async_read_bench)
 target_link_libraries(
   async_read_bench PUBLIC monad_trie monad_async monad_core
                                   CLI11::CLI11 quill::quill)
+
+# benchmark mpt
+add_executable(mpt_bench "mpt_bench.cpp")
+monad_compile_options(mpt_bench)
+target_link_libraries(
+  mpt_bench PUBLIC monad_trie monad_async monad_core
+                                  CLI11::CLI11 quill::quill)
